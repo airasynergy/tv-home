@@ -14,9 +14,13 @@ A clean, Apple TV–style home screen for Google TV.
 - **Hold OK on any tile** — Add to / Remove from Top Row, Move Left / Right, App Info.
 - Tiles lift with a soft shadow, show their name underneath, and a light sweep
   glides across them when selected.
-- **Nomorflix app** (`WebAppActivity.kt`) — opens the site full-screen. The remote's
-  arrows move an on-screen pointer, **OK** clicks, pushing against the top/bottom
-  edge scrolls, **Back** goes back. Full-screen video works; pop-ups are blocked.
+- **Nomorflix app** (`WebAppActivity.kt`) — opens the site full-screen, laid out for a
+  bigger screen so more fits. Remote controls:
+  - **Arrows** glide a mouse pointer; **OK** clicks.
+  - **Hold OK** → *Scroll mode*: arrows scroll whatever is under the pointer
+    (dropdowns, episode lists, the page). Press **OK** or **Back** to return to the pointer.
+  - Pushing the pointer against an edge also scrolls; **Channel Up/Down** scroll too.
+  - **Back** goes back, **Menu** reloads, **Play/Pause · Fast-forward · Rewind** control video.
 
 ## Add more website apps
 In `MainActivity.kt`, add a line to `webApps`:

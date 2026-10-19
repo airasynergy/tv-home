@@ -52,6 +52,8 @@ class WebAppActivity : Activity() {
         const val EXTRA_COLOR_BOTTOM = "colorBottom"
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private val EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+        private const val LAYOUT_WIDTH = 1280
+        private const val HOLD_FOR_SCROLL_MS = 550L
     }
 
     private lateinit var root: FrameLayout
@@ -59,6 +61,7 @@ class WebAppActivity : Activity() {
     private lateinit var cursor: CursorView
     private lateinit var progress: View
     private lateinit var splash: View
+    private lateinit var modePill: TextView
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -106,7 +109,12 @@ class WebAppActivity : Activity() {
                 return scheme != "http" && scheme != "https" // ignore intent://, market://, etc.
             }
 
-            override fun onPageFinished(view: WebView, url: String) = hideSplash()
+            override fun onPageCommitVisible(view: WebView, url: String) = fitMoreOnScreen()
+
+            override fun onPageFinished(view: WebView, url: String) {
+                fitMoreOnScreen()
+                hideSplash()
+            }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                 recreate() // the page crashed: reopen cleanly instead of closing the app
@@ -134,11 +142,28 @@ class WebAppActivity : Activity() {
         }
         splash = buildSplash()
         cursor = CursorView(this)
+        modePill = TextView(this).apply {
+            text = "Scroll mode  ·  press OK for pointer"
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            typeface = resources.getFont(R.font.inter_medium)
+            setPadding((22 * density).toInt(), (12 * density).toInt(), (22 * density).toInt(), (12 * density).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 100 * density
+                setColor(0xD91C1C1E.toInt())
+                setStroke((1 * density).toInt().coerceAtLeast(1), 0x26FFFFFF)
+            }
+            alpha = 0f
+        }
 
         root.addView(web, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(splash, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(progress, FrameLayout.LayoutParams(MATCH, (3 * density).toInt(), Gravity.TOP))
         root.addView(cursor, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(modePill, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = (36 * density).toInt() })
         setContentView(root)
         hideSystemBars()
 
@@ -150,6 +175,23 @@ class WebAppActivity : Activity() {
             handler.postDelayed({ hideSplash() }, 6000) // never hide the site for long
         }
         web.requestFocus()
+    }
+
+    /**
+     * Lays the page out as if the screen were 1280 wide (instead of the TV's 960), then
+     * scales it to fit. Everything gets a little smaller and far more fits on screen,
+     * so long menus like the seasons list aren't cut off.
+     */
+    private fun fitMoreOnScreen() {
+        web.evaluateJavascript(
+            "(function(){var W=$LAYOUT_WIDTH;function fix(){var h=document.head||document.documentElement;" +
+                "var m=document.querySelector('meta[name=viewport]');" +
+                "if(!m){m=document.createElement('meta');m.name='viewport';h.appendChild(m);}" +
+                "var c='width='+W;if(m.content!==c)m.content=c;}fix();" +
+                "if(!window.__tvFit&&document.head){window.__tvFit=1;" +
+                "new MutationObserver(fix).observe(document.head,{childList:true,subtree:true,attributes:true});}})()",
+            null
+        )
     }
 
     /** Desktop Chrome user agent that matches this TV's real browser engine version. */
@@ -243,9 +285,15 @@ class WebAppActivity : Activity() {
             if (held > 0.16f) {
                 // Glide: starts gentle for precision, eases up to full speed over ~0.9s.
                 val ramp = ((held - 0.16f) / 0.9f).coerceIn(0f, 1f)
-                val speedDp = 380f + 1250f * ramp * ramp
-                val step = speedDp * density * dt
-                moveBy(dirX * step, dirY * step)
+                if (scrollMode) {
+                    // Continuous wheel scrolling of whatever is under the pointer.
+                    val notches = (4f + 26f * ramp * ramp) * dt
+                    dispatchMouse(MotionEvent.ACTION_SCROLL, v = -dirY * notches, h = dirX * notches)
+                } else {
+                    val speedDp = 380f + 1250f * ramp * ramp
+                    val step = speedDp * density * dt
+                    moveBy(dirX * step, dirY * step)
+                }
             }
             Choreographer.getInstance().postFrameCallback(this)
         }
@@ -261,9 +309,31 @@ class WebAppActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_RIGHT -> { direction(1, 0, down, first); return true }
 
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                if (first) touch(MotionEvent.ACTION_DOWN)
-                if (e.action == KeyEvent.ACTION_UP) touch(MotionEvent.ACTION_UP)
+                if (first) {
+                    holdFired = false
+                    cursor.isDown = true
+                    cursor.wake()
+                    cursor.invalidate()
+                    handler.postDelayed(holdForScroll, HOLD_FOR_SCROLL_MS)
+                }
+                if (e.action == KeyEvent.ACTION_UP) {
+                    handler.removeCallbacks(holdForScroll)
+                    cursor.isDown = false
+                    cursor.invalidate()
+                    when {
+                        holdFired -> {} // the hold already switched modes
+                        scrollMode -> setScrollMode(false)
+                        else -> click()
+                    }
+                }
                 return true
+            }
+
+            KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> {
+                if (down) dispatchMouse(MotionEvent.ACTION_SCROLL, v = -3f); return true
+            }
+            KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> {
+                if (down) dispatchMouse(MotionEvent.ACTION_SCROLL, v = 3f); return true
             }
 
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
@@ -287,7 +357,8 @@ class WebAppActivity : Activity() {
             if (wasIdle) holdStart = SystemClock.uptimeMillis()
             val wasHidden = cursor.alpha < 0.5f
             cursor.wake()
-            if (!wasHidden) moveBy(x * 16f * density, y * 16f * density) // a tap = a small, precise nudge
+            if (scrollMode) dispatchMouse(MotionEvent.ACTION_SCROLL, v = -y.toFloat(), h = x.toFloat())
+            else if (!wasHidden) moveBy(x * 16f * density, y * 16f * density) // a tap = a small, precise nudge
             if (!looping) {
                 looping = true
                 Choreographer.getInstance().postFrameCallback(frame)
@@ -342,23 +413,38 @@ class WebAppActivity : Activity() {
         ev.recycle()
     }
 
-    private var downTime = 0L
+    private var scrollMode = false
+    private var holdFired = false
+    private val holdForScroll = Runnable {
+        holdFired = true
+        setScrollMode(!scrollMode)
+    }
 
-    private fun touch(action: Int) {
+    /** Hold OK: arrows scroll what's under the pointer (menus, lists, the page). */
+    private fun setScrollMode(on: Boolean) {
+        scrollMode = on
+        cursor.scrollMode = on
         cursor.wake()
-        val now = SystemClock.uptimeMillis()
-        if (action == MotionEvent.ACTION_DOWN) downTime = now
-        val ev = MotionEvent.obtain(downTime, now, action, cursor.x0, cursor.y0, 0)
-        ev.source = InputDevice.SOURCE_TOUCHSCREEN
-        target().dispatchTouchEvent(ev)
-        ev.recycle()
-        cursor.isDown = action == MotionEvent.ACTION_DOWN
         cursor.invalidate()
-        if (action == MotionEvent.ACTION_UP) {
-            target().requestFocus()
-            // Re-establish hover so menus that opened on click stay tracked.
-            dispatchMouse(MotionEvent.ACTION_HOVER_MOVE)
+        modePill.animate().cancel()
+        modePill.translationY = if (on) 12 * density else 0f
+        modePill.animate().alpha(if (on) 1f else 0f).translationY(0f)
+            .setDuration(220).setInterpolator(EASE).start()
+    }
+
+    /** A quick tap at the pointer, released immediately so the page never sees a long-press. */
+    private fun click() {
+        cursor.wake()
+        val t = SystemClock.uptimeMillis()
+        listOf(MotionEvent.ACTION_DOWN to t, MotionEvent.ACTION_UP to t + 40).forEach { (action, time) ->
+            val ev = MotionEvent.obtain(t, time, action, cursor.x0, cursor.y0, 0)
+            ev.source = InputDevice.SOURCE_TOUCHSCREEN
+            target().dispatchTouchEvent(ev)
+            ev.recycle()
         }
+        target().requestFocus()
+        // Re-establish hover so menus that opened on click stay tracked.
+        dispatchMouse(MotionEvent.ACTION_HOVER_MOVE)
     }
 
     /** Runs a snippet against the page's playing (or first) video. */
@@ -373,6 +459,7 @@ class WebAppActivity : Activity() {
     @Deprecated("Uses Back to navigate web history")
     override fun onBackPressed() {
         when {
+            scrollMode -> setScrollMode(false)
             fullscreenView != null -> exitVideoFullscreen()
             web.canGoBack() -> web.goBack()
             else -> finish()
@@ -397,7 +484,13 @@ class WebAppActivity : Activity() {
         var x0 = -1f
         var y0 = -1f
         var isDown = false
+        var scrollMode = false
         private val d = context.resources.displayMetrics.density
+        private val chevron = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 2.5f * d
+            strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        private val ringFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB31C1C1E.toInt() }
         private val fadeHandler = Handler(Looper.getMainLooper())
         private val fadeOut = Runnable { animate().alpha(0f).setDuration(500).start() }
 
@@ -426,6 +519,20 @@ class WebAppActivity : Activity() {
         }
 
         override fun onDraw(canvas: Canvas) {
+            if (scrollMode) {
+                val r = 16f * d
+                canvas.drawCircle(x0, y0 + 1.5f * d, r + 1f * d, shadow)
+                canvas.drawCircle(x0, y0, r, ringFill)
+                canvas.drawCircle(x0, y0, r, ring)
+                val a = 5f * d
+                // up chevron
+                canvas.drawLine(x0 - a, y0 - 3f * d, x0, y0 - 3f * d - a, chevron)
+                canvas.drawLine(x0, y0 - 3f * d - a, x0 + a, y0 - 3f * d, chevron)
+                // down chevron
+                canvas.drawLine(x0 - a, y0 + 3f * d, x0, y0 + 3f * d + a, chevron)
+                canvas.drawLine(x0, y0 + 3f * d + a, x0 + a, y0 + 3f * d, chevron)
+                return
+            }
             val r = (if (isDown) 7.5f else 9f) * d
             canvas.drawCircle(x0, y0 + 1.5f * d, r + 1f * d, shadow)
             canvas.drawCircle(x0, y0, r + 6f * d, glow)
