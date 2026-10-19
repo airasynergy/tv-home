@@ -23,7 +23,7 @@ jobs:
       - name: Report build errors
         if: failure()
         run: |
-          grep -E "^e: |error:|Error:|What went wrong|^> " build.log | head -40 | while IFS= read -r line; do
+          grep -E "^e: |error:|Error:|What went wrong|^> [^T]|^\* What|FAILED" build.log | grep -v "> Task" | head -10 | while IFS= read -r line; do
             echo "::error::${line}"
           done
       - uses: actions/upload-artifact@v4
