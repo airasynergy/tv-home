@@ -1,7 +1,6 @@
 package com.aira.tvhome
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -19,6 +18,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
@@ -27,7 +27,6 @@ import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -39,10 +38,12 @@ import java.util.Date
 /**
  * Apple TV–style home screen for Google TV.
  *
- *  ┌ Good evening, Jaiden                         7:42 ┐
- *  │                                                    │   ← Top Shelf: blurred art of
- *  │  Nomorflix                                         │     the focused app fills the
- *  │  [■][■][■][■][■]   ← Top Row (your favourites)     │     background
+ *  ┌ Good evening, Jaiden                          7:42 ┐
+ *  │ Monday, October 19                                 │
+ *  │                                                    │  ← Top Shelf: blurred art of
+ *  │  WEB APP                                           │    the focused app fills the
+ *  │  Nomorflix                                         │    background
+ *  │  [■][■][■][■][■]   ← Top Row (your favourites)     │
  *  │  All Apps                                          │
  *  └  [■][■][■][■][■]   ← every other installed app     ┘
  *
@@ -55,6 +56,7 @@ class MainActivity : Activity() {
         const val USER_NAME = "Jaiden"
 
         private const val COLUMNS = 5
+        private const val SIDE_PADDING_DP = 72f
         private const val PREFS = "home"
         private const val KEY_FAVS = "topRow"
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -98,6 +100,7 @@ class MainActivity : Activity() {
 
     private class Tile(
         val key: String,
+        val kind: String,
         val label: String,
         val subtitle: String,
         val banner: Drawable?,
@@ -109,12 +112,13 @@ class MainActivity : Activity() {
         val launch: () -> Unit
     )
 
+    private lateinit var root: FrameLayout
     private lateinit var scroller: ScrollView
-    private lateinit var dockScroller: HorizontalScrollView
     private lateinit var dockRow: LinearLayout
     private lateinit var grid: LinearLayout
     private lateinit var allAppsLabel: TextView
     private lateinit var hero: LinearLayout
+    private lateinit var heroKicker: TextView
     private lateinit var heroTitle: TextView
     private lateinit var heroSub: TextView
     private lateinit var greeting: TextView
@@ -128,9 +132,13 @@ class MainActivity : Activity() {
     private var lastFocusedKey: String? = null
     private var currentWallKey: String? = null
     private var loadGeneration = 0
+    private var menuOverlay: View? = null
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     private val density by lazy { resources.displayMetrics.density }
+    private val interMedium: Typeface by lazy { resources.getFont(R.font.inter_medium) }
+    private val interSemibold: Typeface by lazy { resources.getFont(R.font.inter_semibold) }
+    private val interDisplayBold: Typeface by lazy { resources.getFont(R.font.inter_display_bold) }
     private fun dp(v: Float) = v * density
     private fun dpi(v: Float) = (v * density).toInt()
 
@@ -145,12 +153,13 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        root = findViewById(R.id.root)
         scroller = findViewById(R.id.scroller)
-        dockScroller = findViewById(R.id.dockScroller)
         dockRow = findViewById(R.id.dockRow)
         grid = findViewById(R.id.grid)
         allAppsLabel = findViewById(R.id.allAppsLabel)
         hero = findViewById(R.id.hero)
+        heroKicker = findViewById(R.id.heroKicker)
         heroTitle = findViewById(R.id.heroTitle)
         heroSub = findViewById(R.id.heroSub)
         greeting = findViewById(R.id.greeting)
@@ -160,18 +169,24 @@ class MainActivity : Activity() {
         wallBack = findViewById(R.id.wallB)
 
         if (Build.VERSION.SDK_INT >= 31) {
-            val blur = RenderEffect.createBlurEffect(dp(40f), dp(40f), Shader.TileMode.CLAMP)
+            val blur = RenderEffect.createBlurEffect(dp(44f), dp(44f), Shader.TileMode.CLAMP)
             wallFront.setRenderEffect(blur)
             wallBack.setRenderEffect(blur)
         }
-        listOf(wallFront, wallBack).forEach { it.scaleX = 1.15f; it.scaleY = 1.15f }
+        listOf(wallFront, wallBack).forEach { it.scaleX = 1.18f; it.scaleY = 1.18f }
 
+        // Darken for legibility: lighter in the middle where the art shows, deep at the bottom.
         findViewById<View>(R.id.wallShade).background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(0x8C000000.toInt(), 0x59000000, 0xB3000000.toInt(), 0xF2000000.toInt())
+            intArrayOf(0x99000000.toInt(), 0x4D000000, 0x8C000000.toInt(), 0xE6000000.toInt(), 0xFF000000.toInt())
+        )
+        // Soft vignette at the sides keeps the eye in the centre.
+        findViewById<View>(R.id.wallVignette).background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(0x73000000, 0x00000000, 0x00000000, 0x59000000)
         )
 
-        // Make the Top Shelf fill the upper part of the screen, so the Top Row sits low like Apple TV.
+        // The Top Shelf fills the upper part of the screen, so the Top Row sits low like Apple TV.
         val screenH = resources.displayMetrics.heightPixels
         hero.layoutParams = hero.layoutParams.apply { height = (screenH * 0.40f).toInt() }
     }
@@ -189,6 +204,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Home screen: Back returns to the top instead of closing")
     override fun onBackPressed() {
+        if (menuOverlay != null) { closeMenu(); return }
         // Like Apple TV: Back from the grid jumps up to the Top Row.
         if (scroller.scrollY > 0) {
             scroller.smoothScrollTo(0, 0)
@@ -209,7 +225,7 @@ class MainActivity : Activity() {
         greeting.text = "$salutation, $USER_NAME"
         val pattern = if (DateFormat.is24HourFormat(this)) "HH:mm" else "h:mm"
         clock.text = DateFormat.format(pattern, now)
-        dateView.text = DateFormat.format("EEE, MMM d", now)
+        dateView.text = DateFormat.format("EEEE, MMMM d", now)
     }
 
     // ── Loading every installed app (background thread) ──────────────────────
@@ -232,6 +248,7 @@ class MainActivity : Activity() {
         webApps.forEach { w ->
             out += Tile(
                 key = "web:${w.url}",
+                kind = "Web App",
                 label = w.name,
                 subtitle = w.url.removePrefix("https://").removePrefix("http://"),
                 banner = null, icon = null, wordmark = w.wordmark,
@@ -240,6 +257,10 @@ class MainActivity : Activity() {
                     startActivity(
                         Intent(this, WebAppActivity::class.java)
                             .putExtra(WebAppActivity.EXTRA_URL, w.url)
+                            .putExtra(WebAppActivity.EXTRA_NAME, w.name)
+                            .putExtra(WebAppActivity.EXTRA_WORDMARK, w.wordmark)
+                            .putExtra(WebAppActivity.EXTRA_COLOR_TOP, w.colorTop)
+                            .putExtra(WebAppActivity.EXTRA_COLOR_BOTTOM, w.colorBottom)
                     )
                 }
             )
@@ -260,13 +281,17 @@ class MainActivity : Activity() {
                     ?: continue
                 val banner = try { ai.loadBanner(pm) ?: ai.applicationInfo.loadBanner(pm) } catch (e: Exception) { null }
                 val icon = try { ai.loadIcon(pm) } catch (e: Exception) { null }
+                val accent = dominantColor(banner ?: icon)
                 installed += Tile(
                     key = "pkg:$pkg",
+                    kind = "App",
                     label = ri.loadLabel(pm).toString(),
                     subtitle = "",
                     banner = banner, icon = icon, wordmark = null,
-                    bgTop = 0xFF3A3A3C.toInt(), bgBottom = 0xFF232325.toInt(),
-                    accent = dominantColor(banner ?: icon),
+                    // Icon-only apps get a rich backdrop tinted from their own colours.
+                    bgTop = mix(accent, Color.BLACK, 0.45f),
+                    bgBottom = mix(accent, Color.BLACK, 0.78f),
+                    accent = accent,
                     launch = {
                         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         safeStart(launchIntent)
@@ -278,13 +303,14 @@ class MainActivity : Activity() {
 
         out += Tile(
             key = "settings",
+            kind = "System",
             label = "Settings",
             subtitle = "",
             banner = null,
             icon = getDrawable(R.drawable.ic_settings),
             wordmark = null,
-            bgTop = 0xFF5B5B60.toInt(), bgBottom = 0xFF3A3A3E.toInt(),
-            accent = 0xFF6E6E73.toInt(),
+            bgTop = 0xFF636366.toInt(), bgBottom = 0xFF3A3A3C.toInt(),
+            accent = 0xFF8E8E93.toInt(),
             launch = { safeStart(Intent(Settings.ACTION_SETTINGS)) }
         )
         return out
@@ -366,11 +392,11 @@ class MainActivity : Activity() {
         target?.post { target.requestFocus() }
     }
 
-    private fun gap() = dpi(34f)
+    private fun gap() = dpi(36f)
 
     /** Five 16:9 tiles across the safe area, like Apple TV's home grid. */
     private fun tileSize(): Pair<Int, Int> {
-        val usable = resources.displayMetrics.widthPixels - dpi(64f) * 2
+        val usable = resources.displayMetrics.widthPixels - dpi(SIDE_PADDING_DP) * 2
         val w = (usable - gap() * (COLUMNS - 1)) / COLUMNS
         return w to (w * 9 / 16)
     }
@@ -386,6 +412,7 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(w, WRAP)
         }
 
+        val radius = dp(14f)
         val card = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(w, h)
             isFocusable = true
@@ -395,10 +422,20 @@ class MainActivity : Activity() {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(t.bgTop, t.bgBottom)
-            ).apply { cornerRadius = dp(12f) }
+            ).apply { cornerRadius = radius }
+            // Hairline edge, like glass catching light.
+            foreground = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(Color.TRANSPARENT)
+                setStroke(dpi(1f).coerceAtLeast(1), 0x1FFFFFFF)
+            }
             outlineProvider = ViewOutlineProvider.BACKGROUND
             clipToOutline = true
-            elevation = dp(3f)
+            elevation = dp(2f)
+            if (Build.VERSION.SDK_INT >= 28) {
+                outlineSpotShadowColor = Color.BLACK
+                outlineAmbientShadowColor = Color.BLACK
+            }
         }
 
         when {
@@ -410,8 +447,8 @@ class MainActivity : Activity() {
             t.wordmark != null -> card.addView(TextView(this).apply {
                 text = t.wordmark
                 setTextColor(Color.WHITE)
-                textSize = 21f
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                textSize = 20f
+                typeface = interDisplayBold
                 letterSpacing = -0.03f
                 gravity = Gravity.CENTER
             }, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -419,14 +456,15 @@ class MainActivity : Activity() {
             t.icon != null -> card.addView(ImageView(this).apply {
                 setImageDrawable(t.icon)
                 scaleType = ImageView.ScaleType.FIT_CENTER
-            }, FrameLayout.LayoutParams((h * 0.52f).toInt(), (h * 0.52f).toInt(), Gravity.CENTER))
+                elevation = dp(2f)
+            }, FrameLayout.LayoutParams((h * 0.5f).toInt(), (h * 0.5f).toInt(), Gravity.CENTER))
         }
 
-        // Glass highlight across the top edge.
+        // Glass highlight across the top half.
         card.addView(View(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0x26FFFFFF, 0x00FFFFFF)
+                intArrayOf(0x1FFFFFFF, 0x00FFFFFF)
             )
         }, FrameLayout.LayoutParams(MATCH, h / 2, Gravity.TOP))
 
@@ -434,7 +472,7 @@ class MainActivity : Activity() {
         val sheen = View(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF)
+                intArrayOf(0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF)
             )
             rotation = 18f
             alpha = 0f
@@ -445,32 +483,34 @@ class MainActivity : Activity() {
             text = t.label
             setTextColor(Color.WHITE)
             textSize = 14f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            typeface = interMedium
+            letterSpacing = -0.005f
             gravity = Gravity.CENTER_HORIZONTAL
             maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            ellipsize = TextUtils.TruncateAt.END
             alpha = 0f
-            setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
+            setShadowLayer(10f, 0f, 1f, 0x99000000.toInt())
         }
 
         cell.addView(card)
         cell.addView(label, LinearLayout.LayoutParams(MATCH, WRAP).apply {
-            topMargin = dpi(14f)
-            bottomMargin = dpi(if (inTopRow) 8f else 26f)
+            topMargin = dpi(16f)
+            bottomMargin = dpi(if (inTopRow) 6f else 28f)
         })
 
         card.setOnFocusChangeListener { v, hasFocus ->
             v.animate()
-                .scaleX(if (hasFocus) 1.13f else 1f)
-                .scaleY(if (hasFocus) 1.13f else 1f)
-                .translationZ(if (hasFocus) dp(22f) else 0f)
-                .setDuration(if (hasFocus) 260 else 200)
+                .scaleX(if (hasFocus) 1.12f else 1f)
+                .scaleY(if (hasFocus) 1.12f else 1f)
+                .translationZ(if (hasFocus) dp(26f) else 0f)
+                .setDuration(if (hasFocus) 280 else 220)
                 .setInterpolator(EASE)
                 .start()
             label.animate()
                 .alpha(if (hasFocus) 1f else 0f)
-                .translationY(if (hasFocus) dp(4f) else 0f)
-                .setDuration(220)
+                .translationY(if (hasFocus) dp(5f) else 0f)
+                .setDuration(240)
+                .setInterpolator(EASE)
                 .start()
             if (hasFocus) {
                 lastFocusedKey = t.key
@@ -480,12 +520,12 @@ class MainActivity : Activity() {
         }
         card.setOnClickListener {
             // Small press-in, then open.
-            it.animate().scaleX(1.06f).scaleY(1.06f).setDuration(90).withEndAction {
-                it.animate().scaleX(1.13f).scaleY(1.13f).setDuration(140).start()
+            it.animate().scaleX(1.05f).scaleY(1.05f).setDuration(90).setInterpolator(EASE).withEndAction {
+                it.animate().scaleX(1.12f).scaleY(1.12f).setDuration(160).setInterpolator(EASE).start()
                 t.launch()
             }.start()
         }
-        card.setOnLongClickListener { showOptions(t); true }
+        card.setOnLongClickListener { showMenu(t, card); true }
         return cell
     }
 
@@ -495,20 +535,25 @@ class MainActivity : Activity() {
         sheen.alpha = 1f
         sheen.animate()
             .translationX(w * 1.2f)
-            .setStartDelay(120)
-            .setDuration(800)
+            .setStartDelay(140)
+            .setDuration(850)
             .setInterpolator(DecelerateInterpolator(1.4f))
             .withEndAction { sheen.alpha = 0f }
             .start()
     }
 
     private fun onTileFocused(t: Tile, cell: View, inTopRow: Boolean) {
+        heroKicker.text = t.kind
         heroTitle.text = t.label
         heroSub.text = t.subtitle
         heroSub.visibility = if (t.subtitle.isEmpty()) View.GONE else View.VISIBLE
-        heroTitle.alpha = 0f
-        heroTitle.translationY = dp(8f)
-        heroTitle.animate().alpha(1f).translationY(0f).setDuration(280).setInterpolator(EASE).start()
+        listOf(heroKicker, heroTitle, heroSub).forEachIndexed { i, v ->
+            v.animate().cancel()
+            v.alpha = 0f
+            v.translationY = dp(8f)
+            v.animate().alpha(1f).translationY(0f)
+                .setStartDelay(i * 40L).setDuration(320).setInterpolator(EASE).start()
+        }
 
         setWallpaper(t)
 
@@ -518,7 +563,7 @@ class MainActivity : Activity() {
         } else {
             // Grid focused → slide the shelf away and keep the row comfortably on screen.
             val rowView = cell.parent as View
-            val y = grid.top + rowView.top - dpi(110f)
+            val y = grid.top + rowView.top - dpi(120f)
             scroller.post { scroller.smoothScrollTo(0, y.coerceAtLeast(0)) }
         }
     }
@@ -528,34 +573,32 @@ class MainActivity : Activity() {
         if (t.key == currentWallKey) return
         currentWallKey = t.key
 
-        val art: Drawable = if (Build.VERSION.SDK_INT >= 31) {
-            // A separate copy, so the tile and the wallpaper don't share one drawable.
-            (t.banner ?: t.icon)?.constantState?.newDrawable(resources)?.mutate()
-                ?: GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(t.bgTop, t.bgBottom))
-        } else {
-            // Older Android has no blur, so use a soft colour wash instead.
-            GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(t.accent, Color.BLACK)
-            )
+        val art: Drawable = when {
+            t.wordmark != null ->
+                GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(t.bgTop, t.bgBottom, Color.BLACK))
+            Build.VERSION.SDK_INT >= 31 ->
+                // A separate copy, so the tile and the wallpaper don't share one drawable.
+                (t.banner ?: t.icon)?.constantState?.newDrawable(resources)?.mutate()
+                    ?: GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(t.bgTop, t.bgBottom))
+            else ->
+                // Older Android has no blur, so use a soft colour wash instead.
+                GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(t.accent, Color.BLACK))
         }
+
         val incoming = wallBack
         val outgoing = wallFront
-        incoming.setImageDrawable(
-            if (t.wordmark != null)
-                GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(t.bgTop, t.bgBottom, Color.BLACK))
-            else art
-        )
+        incoming.setImageDrawable(art)
         incoming.animate().cancel()
         incoming.alpha = 0f
-        incoming.animate().alpha(1f).setDuration(550).setInterpolator(EASE).start()
-        outgoing.animate().alpha(0f).setDuration(550).start()
+        incoming.animate().alpha(1f).setDuration(600).setInterpolator(EASE).start()
+        outgoing.animate().alpha(0f).setDuration(600).setInterpolator(EASE).start()
         wallFront = incoming
         wallBack = outgoing
     }
 
-    // ── Hold OK: options menu ────────────────────────────────────────────────
-    private fun showOptions(t: Tile) {
+    // ── Hold OK: Apple-style options menu ────────────────────────────────────
+    private fun showMenu(t: Tile, anchor: View) {
+        if (menuOverlay != null) return
         val keys = topRowKeys()
         val idx = keys.indexOf(t.key)
         val actions = mutableListOf<Pair<String, () -> Unit>>()
@@ -577,11 +620,83 @@ class MainActivity : Activity() {
             }
         }
 
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle(t.label)
-            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
-            .setNegativeButton("Cancel", null)
-            .show()
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(0x99000000.toInt())
+            alpha = 0f
+            isClickable = true
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpi(14f), dpi(22f), dpi(14f), dpi(14f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(26f)
+                setColor(0xF21C1C1E.toInt())
+                setStroke(dpi(1f).coerceAtLeast(1), 0x1AFFFFFF)
+            }
+            elevation = dp(30f)
+            scaleX = 0.94f
+            scaleY = 0.94f
+        }
+        panel.addView(TextView(this).apply {
+            text = t.label
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            typeface = interSemibold
+            letterSpacing = -0.015f
+            setPadding(dpi(14f), 0, dpi(14f), dpi(14f))
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        })
+
+        val items = actions.map { (title, action) ->
+            TextView(this).apply {
+                text = title
+                textSize = 17f
+                typeface = interMedium
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dpi(18f), 0, dpi(18f), 0)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                isClickable = true
+                id = View.generateViewId()
+                val idle = GradientDrawable().apply { cornerRadius = dp(14f); setColor(Color.TRANSPARENT) }
+                val active = GradientDrawable().apply { cornerRadius = dp(14f); setColor(Color.WHITE) }
+                background = idle
+                setTextColor(0xE6FFFFFF.toInt())
+                setOnFocusChangeListener { v, has ->
+                    v.background = if (has) active else idle
+                    setTextColor(if (has) Color.BLACK else 0xE6FFFFFF.toInt())
+                    v.animate().scaleX(if (has) 1.03f else 1f).scaleY(if (has) 1.03f else 1f)
+                        .setDuration(160).setInterpolator(EASE).start()
+                }
+                setOnClickListener { closeMenu(); action() }
+            }
+        }
+        items.forEach { panel.addView(it, LinearLayout.LayoutParams(MATCH, dpi(52f)).apply { topMargin = dpi(4f) }) }
+        // Keep the remote inside the menu while it's open.
+        items.forEachIndexed { i, v ->
+            v.nextFocusLeftId = v.id
+            v.nextFocusRightId = v.id
+            v.nextFocusUpId = items[maxOf(0, i - 1)].id
+            v.nextFocusDownId = items[minOf(items.lastIndex, i + 1)].id
+        }
+
+        overlay.addView(panel, FrameLayout.LayoutParams(dpi(380f), WRAP, Gravity.CENTER))
+        root.addView(overlay, FrameLayout.LayoutParams(MATCH, MATCH))
+        overlay.tag = anchor
+        menuOverlay = overlay
+
+        overlay.animate().alpha(1f).setDuration(200).setInterpolator(EASE).start()
+        panel.animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(EASE).start()
+        items.firstOrNull()?.requestFocus()
+    }
+
+    private fun closeMenu() {
+        val overlay = menuOverlay ?: return
+        menuOverlay = null
+        (overlay.tag as? View)?.requestFocus()
+        overlay.animate().alpha(0f).setDuration(160).setInterpolator(EASE)
+            .withEndAction { root.removeView(overlay) }.start()
     }
 
     private fun commit(keys: List<String>) {
@@ -590,13 +705,19 @@ class MainActivity : Activity() {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+    private fun mix(a: Int, b: Int, t: Float): Int = Color.rgb(
+        (Color.red(a) * (1 - t) + Color.red(b) * t).toInt(),
+        (Color.green(a) * (1 - t) + Color.green(b) * t).toInt(),
+        (Color.blue(a) * (1 - t) + Color.blue(b) * t).toInt()
+    )
+
     /** Averages a tiny render of the app art to get its brand colour. */
     private fun dominantColor(d: Drawable?): Int {
-        if (d == null) return 0xFF2C2C2E.toInt()
+        if (d == null) return 0xFF3A3A3C.toInt()
         return try {
             val size = 16
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val copy = d.constantState?.newDrawable()?.mutate() ?: return 0xFF2C2C2E.toInt()
+            val copy = d.constantState?.newDrawable()?.mutate() ?: return 0xFF3A3A3C.toInt()
             copy.setBounds(0, 0, size, size)
             copy.draw(Canvas(bmp))
             var r = 0L; var g = 0L; var b = 0L; var n = 0L
@@ -609,10 +730,10 @@ class MainActivity : Activity() {
                 r += Color.red(p) * wgt; g += Color.green(p) * wgt; b += Color.blue(p) * wgt; n += wgt
             }
             bmp.recycle()
-            if (n == 0L) 0xFF2C2C2E.toInt()
+            if (n == 0L) 0xFF3A3A3C.toInt()
             else Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
         } catch (e: Exception) {
-            0xFF2C2C2E.toInt()
+            0xFF3A3A3C.toInt()
         }
     }
 }

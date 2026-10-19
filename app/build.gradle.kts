@@ -9,17 +9,26 @@ android {
 
     defaultConfig {
         applicationId = "com.aira.tvhome"
-        minSdk = 23
+        minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
+    }
+
+    // One permanent key, so every new build installs over the old one (settings kept).
+    signingConfigs {
+        create("tvhome") {
+            storeFile = file("tvhome.keystore")
+            storePassword = "tvhome-key"
+            keyAlias = "tvhome"
+            keyPassword = "tvhome-key"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so the APK installs straight away.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("tvhome")
         }
     }
 
