@@ -184,7 +184,7 @@ class WebAppActivity : Activity() {
         ev.source = InputDevice.SOURCE_TOUCHSCREEN
         web.dispatchTouchEvent(ev)
         ev.recycle()
-        cursor.pressed = action == MotionEvent.ACTION_DOWN
+        cursor.isDown = action == MotionEvent.ACTION_DOWN
         cursor.invalidate()
         if (action == MotionEvent.ACTION_UP) web.requestFocus()
     }
@@ -210,7 +210,7 @@ class WebAppActivity : Activity() {
     private class CursorView(context: Context) : View(context) {
         var x0 = -1f
         var y0 = -1f
-        var pressed = false
+        var isDown = false
         private val d = context.resources.displayMetrics.density
         private val fadeHandler = Handler(Looper.getMainLooper())
         private val fadeOut = Runnable { animate().alpha(0f).setDuration(400).start() }
@@ -239,7 +239,7 @@ class WebAppActivity : Activity() {
         }
 
         override fun onDraw(canvas: Canvas) {
-            val r = (if (pressed) 9f else 11f) * d
+            val r = (if (isDown) 9f else 11f) * d
             canvas.drawCircle(x0, y0, r + 7f * d, halo)
             canvas.drawCircle(x0, y0, r, fill)
             canvas.drawCircle(x0, y0, r, ring)
