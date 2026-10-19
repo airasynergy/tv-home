@@ -171,7 +171,7 @@ class WebAppActivity : Activity() {
             web.restoreState(savedInstanceState)
             splash.visibility = View.GONE
         } else {
-            web.loadUrl(intent.getStringExtra(EXTRA_URL) ?: "https://nomorflix.com")
+            web.loadUrl(intent.getStringExtra(EXTRA_URL) ?: "https://nomorflix.cc")
             handler.postDelayed({ hideSplash() }, 6000) // never hide the site for long
         }
         web.requestFocus()

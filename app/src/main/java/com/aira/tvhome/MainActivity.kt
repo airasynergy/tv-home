@@ -82,7 +82,7 @@ class MainActivity : Activity() {
     private val webApps = listOf(
         WebApp(
             name = "Nomorflix",
-            url = "https://nomorflix.com",
+            url = "https://nomorflix.cc",
             wordmark = "nomorflix",
             colorTop = 0xFFE50914.toInt(),
             colorBottom = 0xFF5A0308.toInt()
@@ -247,7 +247,7 @@ class MainActivity : Activity() {
 
         webApps.forEach { w ->
             out += Tile(
-                key = "web:${w.url}",
+                key = webKey(w),
                 kind = "Web App",
                 label = w.name,
                 subtitle = w.url.removePrefix("https://").removePrefix("http://"),
@@ -331,11 +331,18 @@ class MainActivity : Activity() {
         val present = tiles.map { it.key }.toSet()
         val saved = prefs.getString(KEY_FAVS, null)
         if (saved != null) {
-            return saved.split('\n').filter { it in present }.toMutableList()
+            // Older versions stored websites by address; map those to the site's name
+            // so changing a site's address never drops it from the Top Row.
+            val keys = saved.split('\n').map { k ->
+                if (k.startsWith("web:http")) webApps.firstOrNull { k.contains(it.name.lowercase()) }
+                    ?.let { webKey(it) } ?: k
+                else k
+            }.distinct()
+            return keys.filter { it in present }.toMutableList()
         }
         // First launch: websites + popular streaming apps that are installed.
         val seed = mutableListOf<String>()
-        webApps.forEach { seed += "web:${it.url}" }
+        webApps.forEach { seed += webKey(it) }
         DEFAULT_TOP_ROW.forEach { if ("pkg:$it" in present && seed.size < 6) seed += "pkg:$it" }
         tiles.filter { it.key.startsWith("pkg:") }.forEach {
             if (seed.size < COLUMNS && it.key !in seed) seed += it.key
@@ -347,6 +354,9 @@ class MainActivity : Activity() {
     private fun saveTopRow(keys: List<String>) {
         prefs.edit().putString(KEY_FAVS, keys.joinToString("\n")).apply()
     }
+
+    /** Websites are identified by name, so their address can change freely. */
+    private fun webKey(w: WebApp) = "web:${w.name.lowercase()}"
 
     // ── Rendering ────────────────────────────────────────────────────────────
     private fun render() {
