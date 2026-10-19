@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">TV Home</string>
+    <string name="override_label">TV Home</string>
+    <string name="override_description">Opens TV Home whenever the Google TV home screen appears, so it becomes the screen you see when the TV turns on or you press Home. It only checks which app is on screen and never reads screen content.</string>
 </resources>
