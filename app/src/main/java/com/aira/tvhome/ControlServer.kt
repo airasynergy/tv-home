@@ -248,6 +248,7 @@ class ControlServer(private val svc: HomeOverrideService) {
   input[type=range]::-webkit-slider-runnable-track{height:12px;border-radius:7px;background:#2a2a31;}
   #slider::-webkit-slider-runnable-track{background:linear-gradient(90deg,#3a3a42,#0b0b0f);}
   #warm::-webkit-slider-runnable-track{background:var(--warm);}
+  #vol::-webkit-slider-runnable-track{background:var(--accentgrad);}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-8px;border-radius:50%;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.6);}
 
   .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px;}
@@ -313,12 +314,12 @@ class ControlServer(private val svc: HomeOverrideService) {
     <section id="t-remote" class="tab on">
       <div class="card">
         <div class="label">Volume</div>
-        <div class="vol">
+        <input type="range" id="vol" min="0" max="100" step="1" value="0">
+        <div class="vol" style="margin-top:12px">
           <button id="vdn"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
           <button id="vmute" class="b-ghost"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 3 9 3 15 6 15 11 19" fill="currentColor" stroke="none"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></button>
           <button id="vup"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
         </div>
-        <div class="volbar"><div class="volfill" id="vfill"></div></div>
       </div>
 
       <div class="card">
@@ -445,10 +446,12 @@ class ControlServer(private val svc: HomeOverrideService) {
   for(var a=0;a<acts.length;a++){ acts[a].addEventListener('click', function(){ tap('/'+this.getAttribute('data-act')); }); }
   var meds=document.querySelectorAll('[data-m]');
   for(var m=0;m<meds.length;m++){ meds[m].addEventListener('click', function(){ tap('/media?k='+this.getAttribute('data-m')); }); }
+  var volSlider=g('vol'), tvv=null, volDragging=false;
+  volSlider.addEventListener('input', function(){ volDragging=true; var v=parseInt(volSlider.value,10); if(tvv)clearTimeout(tvv); tvv=setTimeout(function(){ fetch('/vol?pct='+v); volDragging=false; },90); });
   g('vup').addEventListener('click', function(){ fetch('/volup').then(function(r){return r.json();}).then(vol); });
   g('vdn').addEventListener('click', function(){ fetch('/voldown').then(function(r){return r.json();}).then(vol); });
   g('vmute').addEventListener('click', function(){ fetch('/mute').then(function(r){return r.json();}).then(vol); });
-  function vol(s){ if(s&&typeof s.volume!=='undefined'){ g('vfill').style.width=(s.muted?0:s.volume)+'%'; } }
+  function vol(s){ if(s&&typeof s.volume!=='undefined'&&!volDragging){ volSlider.value=(s.muted?0:s.volume); } }
 
   var kbd=g('kbd'), tk=null;
   kbd.addEventListener('input', function(){ if(tk)clearTimeout(tk); tk=setTimeout(function(){ tap('/type?text='+encodeURIComponent(kbd.value)); },120); });

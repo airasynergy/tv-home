@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.Calendar
@@ -105,10 +106,35 @@ class HomeOverrideService : AccessibilityService() {
     // ── Remote: D-pad routes into the open web app; the rest work system-wide ──
     private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    /** Arrows / OK go to whatever of ours is on screen — the web app (Nomorflix) or the launcher. */
+    /** Arrows / OK: our own screens take a real key event; other apps get accessibility focus moves. */
     fun navKey(code: Int) {
         val web = WebAppActivity.current
-        if (web != null) web.remoteKey(code) else MainActivity.current?.remoteKey(code)
+        if (web != null) { web.remoteKey(code); return }
+        val home = MainActivity.current
+        if (home != null) { home.remoteKey(code); return }
+        accessibilityNav(code)
+    }
+
+    /** Move focus (or click) in any other app using the accessibility tree. */
+    private fun accessibilityNav(code: Int) {
+        try {
+            val root = rootInActiveWindow ?: return
+            if (code == KeyEvent.KEYCODE_DPAD_CENTER) {
+                val f = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return
+                f.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return
+            }
+            val dir = when (code) {
+                KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+                KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+                KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+                KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+                else -> return
+            }
+            val cur = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            val next = cur?.focusSearch(dir) ?: return
+            next.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        } catch (e: Exception) { }
     }
 
     /** Type into the text field that currently has input focus on the TV (a search box, etc.). */
