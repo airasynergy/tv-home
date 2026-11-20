@@ -11,8 +11,8 @@ android {
         applicationId = "com.aira.tvhome"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.3"
+        versionCode = 6
+        versionName = "2.4"
     }
 
     // One permanent key, so every new build installs over the old one (settings kept).

@@ -56,6 +56,9 @@ class MainActivity : Activity() {
         /** Name used in the greeting. */
         const val USER_NAME = "Jaiden"
 
+        /** True while this launcher is on screen, so the override service won't relaunch it in a loop. */
+        @Volatile var active = false
+
         private const val COLUMNS = 5
         private const val SIDE_PADDING_DP = 72f
         private const val PREFS = "home"
@@ -157,6 +160,12 @@ class MainActivity : Activity() {
     // ── Lifecycle ────────────────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A launcher never needs the on-screen keyboard; this stops the input method
+        // from repeatedly attaching as focus moves across tiles.
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+            android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        )
         setContentView(R.layout.activity_main)
         root = findViewById(R.id.root)
         scroller = findViewById(R.id.scroller)
@@ -198,12 +207,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        active = true
         handler.post(clockTick)
         loadTiles()
     }
 
     override fun onPause() {
         super.onPause()
+        active = false
         handler.removeCallbacks(clockTick)
     }
 

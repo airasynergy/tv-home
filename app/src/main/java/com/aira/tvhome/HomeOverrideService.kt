@@ -34,35 +34,42 @@ class HomeOverrideService : AccessibilityService() {
 
     private val scheduleTick = object : Runnable {
         override fun run() {
-            applyScheduleIfPhaseChanged()
-            checkSleepTimers()
+            try { applyScheduleIfPhaseChanged(); checkSleepTimers() } catch (e: Exception) { }
             main.postDelayed(this, 60_000)
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        reapplySchedule()
+        // Start the control server and dimming independently of the home override,
+        // and never let setup throw and take the whole service down.
+        try {
+            if (server == null) server = ControlServer(this)
+            server?.start()
+        } catch (e: Exception) { }
+        // Apply the schedule off the critical path (the first tick fires in 3s).
         main.removeCallbacks(scheduleTick)
-        main.postDelayed(scheduleTick, 60_000)
-
-        if (server == null) server = ControlServer(this)
-        server?.start()
+        main.postDelayed(scheduleTick, 3_000)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = event.packageName?.toString() ?: return
-        if (pkg !in STOCK_HOME_SCREENS) return
+        try {
+            if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+            val pkg = event.packageName?.toString() ?: return
+            if (pkg !in STOCK_HOME_SCREENS) return
+            // If our launcher is already on screen, do nothing — relaunching here is
+            // exactly what caused the ping-pong loop that killed the app.
+            if (MainActivity.active) return
 
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastLaunch < 800) return
-        lastLaunch = now
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastLaunch < 1500) return
+            lastLaunch = now
 
-        startActivity(
-            Intent(this, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        )
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        } catch (e: Exception) { }
     }
 
     // ── Called from the phone control server (always on the main thread) ───────
