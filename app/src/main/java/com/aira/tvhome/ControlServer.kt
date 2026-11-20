@@ -112,6 +112,8 @@ class ControlServer(private val svc: HomeOverrideService) {
             }
             "/home" -> { main.post { svc.goHome() }; send(out, "200 OK", "application/json", "{}") }
             "/back" -> { main.post { svc.goBack() }; send(out, "200 OK", "application/json", "{}") }
+            "/type" -> { q["text"]?.let { t -> main.post { svc.typeText(t) } }; send(out, "200 OK", "application/json", "{}") }
+            "/imeenter" -> { main.post { svc.imeEnter() }; send(out, "200 OK", "application/json", "{}") }
 
             "/volup" -> { main.post { svc.volUp() }; send(out, "200 OK", "application/json", state()) }
             "/voldown" -> { main.post { svc.volDown() }; send(out, "200 OK", "application/json", state()) }
@@ -253,6 +255,11 @@ class ControlServer(private val svc: HomeOverrideService) {
   .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;}
   input[type=time],input[type=number]{font:inherit;background:#26262d;border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:10px 12px;width:120px;text-align:center;}
+  input[type=text]{font:inherit;width:100%;background:#26262d;border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:13px 14px;}
+  input[type=text]:focus{outline:none;border-color:var(--accent);}
+  input{-webkit-user-select:text;user-select:text;}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+  .g2 button{padding:13px 0;}
   .wide{width:100%;padding:14px 0;margin-top:8px;}
   .note{color:var(--dim);font-size:12px;margin-top:8px;text-align:center;min-height:16px;}
 
@@ -337,6 +344,13 @@ class ControlServer(private val svc: HomeOverrideService) {
           <button class="b-accent" data-m="playpause"><svg class="f" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg></button>
           <button data-m="ff"><svg class="f" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Keyboard</div>
+        <input type="text" id="kbd" placeholder="Type to search on the TV…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+        <div class="g2"><button class="b-accent" id="kgo">Search</button><button id="kclear">Clear</button></div>
+        <div class="note">Open a search box on the TV first, then type here.</div>
       </div>
     </section>
 
@@ -435,6 +449,11 @@ class ControlServer(private val svc: HomeOverrideService) {
   g('vdn').addEventListener('click', function(){ fetch('/voldown').then(function(r){return r.json();}).then(vol); });
   g('vmute').addEventListener('click', function(){ fetch('/mute').then(function(r){return r.json();}).then(vol); });
   function vol(s){ if(s&&typeof s.volume!=='undefined'){ g('vfill').style.width=(s.muted?0:s.volume)+'%'; } }
+
+  var kbd=g('kbd'), tk=null;
+  kbd.addEventListener('input', function(){ if(tk)clearTimeout(tk); tk=setTimeout(function(){ tap('/type?text='+encodeURIComponent(kbd.value)); },120); });
+  g('kgo').addEventListener('click', function(){ tap('/type?text='+encodeURIComponent(kbd.value)); setTimeout(function(){ tap('/imeenter'); },160); });
+  g('kclear').addEventListener('click', function(){ kbd.value=''; tap('/type?text='); });
 
   var slider=g('slider'), lvl=g('lvl'), warm=g('warm'), warmv=g('warmv'), t1=null, t2=null;
   function pct(el,v){ el.innerHTML=v+'<span>%</span>'; }

@@ -4,11 +4,14 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import java.util.Calendar
 
 /**
@@ -106,6 +109,29 @@ class HomeOverrideService : AccessibilityService() {
     fun navKey(code: Int) {
         val web = WebAppActivity.current
         if (web != null) web.remoteKey(code) else MainActivity.current?.remoteKey(code)
+    }
+
+    /** Type into the text field that currently has input focus on the TV (a search box, etc.). */
+    fun typeText(text: String) {
+        try {
+            val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        } catch (e: Exception) { }
+    }
+
+    /** Submit the focused field — the search "go" / Enter. */
+    fun imeEnter() {
+        try {
+            val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (node != null && Build.VERSION.SDK_INT >= 30) {
+                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            } else {
+                navKey(KeyEvent.KEYCODE_ENTER)
+            }
+        } catch (e: Exception) { }
     }
 
     fun volUp() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)

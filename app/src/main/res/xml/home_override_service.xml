@@ -3,7 +3,6 @@
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:description="@string/override_description"
-    android:notificationTimeout="100"
-    android:packageNames="com.google.android.apps.tv.launcherx,com.google.android.tvlauncher,com.google.android.leanbacklauncher" />
+    android:notificationTimeout="100" />
