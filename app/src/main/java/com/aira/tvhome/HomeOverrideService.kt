@@ -9,17 +9,16 @@ import android.view.accessibility.AccessibilityEvent
 import java.util.Calendar
 
 /**
- * Makes TV Home the screen you land on, and runs the night-dimming features.
+ * Makes TV Home the screen you land on, and runs the dimming / sleep features.
  *
  * Home override: Google TV doesn't let you pick a different home app, so when this
  * is switched on (Settings → System → Accessibility → TV Home) it watches for
- * Google's own home screen appearing — after power-on, waking from standby, or
- * pressing Home — and immediately opens TV Home in its place. It only looks at which
- * app is on screen; it never reads what's on the screen.
+ * Google's own home screen appearing and immediately opens TV Home in its place. It
+ * only looks at which app is on screen; it never reads screen content.
  *
- * Dimming: while connected it also hosts the screen-dim layer ([DimController]), a
- * once-a-minute check that applies the day/night schedule, and the phone control
- * server ([ControlServer]). All of it stops when the service is turned off.
+ * While connected it also hosts the dim/warmth/sleep layer ([DimController]), a
+ * once-a-minute check that applies the day/night schedule and the sleep timers, and
+ * the phone control server ([ControlServer]). All of it stops when switched off.
  */
 class HomeOverrideService : AccessibilityService() {
 
@@ -28,17 +27,18 @@ class HomeOverrideService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var server: ControlServer? = null
     private var lastPhaseNight: Boolean? = null
+    private var lastAutoOffStamp: String? = null
 
     private val scheduleTick = object : Runnable {
         override fun run() {
             applyScheduleIfPhaseChanged()
+            checkSleepTimers()
             main.postDelayed(this, 60_000)
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        // Show whatever the schedule says for right now (e.g. dim if it's already night).
         reapplySchedule()
         main.removeCallbacks(scheduleTick)
         main.postDelayed(scheduleTick, 60_000)
@@ -52,7 +52,6 @@ class HomeOverrideService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg !in STOCK_HOME_SCREENS) return
 
-        // Avoid launching twice in a row if the stock screen fires several events.
         val now = SystemClock.elapsedRealtime()
         if (now - lastLaunch < 800) return
         lastLaunch = now
@@ -63,21 +62,57 @@ class HomeOverrideService : AccessibilityService() {
         )
     }
 
-    /** Set the dim layer to the level the schedule calls for at the current time. */
+    // ── Called from the phone control server (always on the main thread) ───────
     fun reapplySchedule() {
         val night = isNightNow()
         lastPhaseNight = night
-        val target = if (night) DimController.nightLevel(this) else DimController.dayLevel(this)
-        DimController.setLevel(this, target)
+        DimController.setLevel(this, if (night) DimController.nightLevel(this) else DimController.dayLevel(this))
     }
 
-    /** Called every minute: only change the screen when day↔night actually flips. */
+    fun sleepTv() = DimController.sleep(this)
+    fun wakeTv() = DimController.wake(this)
+    fun goHome() = performGlobalAction(GLOBAL_ACTION_HOME)
+    fun goBack() = performGlobalAction(GLOBAL_ACTION_BACK)
+
+    fun openNomorflix() {
+        startActivity(
+            Intent(this, WebAppActivity::class.java)
+                .putExtra(WebAppActivity.EXTRA_URL, "https://nomorflix.cc")
+                .putExtra(WebAppActivity.EXTRA_NAME, "Nomorflix")
+                .putExtra(WebAppActivity.EXTRA_WORDMARK, "nomorflix")
+                .putExtra(WebAppActivity.EXTRA_COLOR_TOP, 0xFFE50914.toInt())
+                .putExtra(WebAppActivity.EXTRA_COLOR_BOTTOM, 0xFF5A0308.toInt())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    // ── Per-minute schedule + timers ──────────────────────────────────────────
     private fun applyScheduleIfPhaseChanged() {
         val night = isNightNow()
         if (night != lastPhaseNight) {
             lastPhaseNight = night
-            val target = if (night) DimController.nightLevel(this) else DimController.dayLevel(this)
-            DimController.setLevel(this, target)
+            DimController.setLevel(this, if (night) DimController.nightLevel(this) else DimController.dayLevel(this))
+        }
+    }
+
+    private fun checkSleepTimers() {
+        // One-off timer the user set for today (overrides the recurring one).
+        val oneshot = DimController.oneshotAt(this)
+        if (oneshot in 1..System.currentTimeMillis()) {
+            DimController.setOneshot(this, 0L)
+            DimController.sleep(this)
+            return
+        }
+        // Recurring auto-off, fired once per occurrence.
+        if (DimController.autoOffEnabled(this) && !DimController.isAsleep()) {
+            val target = DimController.parseMinutes(DimController.autoOffTime(this)) ?: return
+            val cal = Calendar.getInstance()
+            val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+            val stamp = "${cal.get(Calendar.DAY_OF_YEAR)}:$target"
+            if (nowMin == target && stamp != lastAutoOffStamp) {
+                lastAutoOffStamp = stamp
+                DimController.sleep(this)
+            }
         }
     }
 
@@ -106,7 +141,6 @@ class HomeOverrideService : AccessibilityService() {
     }
 
     companion object {
-        /** Google TV and Android TV home screens. */
         private val STOCK_HOME_SCREENS = setOf(
             "com.google.android.apps.tv.launcherx",   // Google TV
             "com.google.android.tvlauncher",          // Android TV

@@ -22,22 +22,33 @@ A clean, Apple TV–style home screen for Google TV.
   - Pushing the pointer against an edge also scrolls; **Channel Up/Down** scroll too.
   - **Back** goes back, **Menu** reloads, **Play/Pause · Fast-forward · Rewind** control video.
 
-## Night dimming & phone control
-TV Home can dim the **whole screen** (any app, video included) to go easy on your
-eyes at night, on a schedule, and you can control it from your phone.
+## Phone control panel — "Jaiden's TV"
+The app serves a control page over Wi-Fi. Open **`http://<TV-IP>:8099`** in any
+phone browser — no second app to install. It can:
 
-- **Schedule** — dims at a set time and clears in the morning. Defaults: dim to 60%
-  at **10:00pm**, clear at **7:00am**. Runs entirely on the TV, no computer needed.
-- **Phone control** — the app serves a small page over Wi-Fi. Open
-  **`http://<TV-IP>:8099`** in any phone browser for a live brightness slider and the
-  schedule editor. Day / Dim / Night / Dark presets included.
-- **How it works** — the dim is a soft black layer the accessibility service lays
-  over the screen (0–80%), so it works even on TVs whose backlight can't be changed
-  over adb. It never takes touch or focus. Requires the **TV Home** accessibility
-  service to be switched on (same one that makes TV Home your home screen).
+- **Dim the whole screen** (any app, video included), 0–80%, with Day / Dim / Night /
+  Dark presets and a live slider.
+- **Warm tint** — shift the picture warmer and cut blue light, separate from dimming.
+- **Sleep timers** — sleep in 15 / 30 / 60 min, or at a set time; a **Wake** button
+  brings it back. ("Sleep" is a software blackout — an app can't cut the TV's power —
+  so you wake it from the phone.)
+- **Auto-off every night** — a recurring blackout time you can enable and override for
+  the day with a one-off sleep timer.
+- **Remote** — Home, Back, and Open Nomorflix straight from your phone.
 
-Code: `DimController.kt` (the layer + schedule settings) and `ControlServer.kt`
-(the phone page). No extra libraries.
+### Night dimming schedule
+Dims at a set time and clears in the morning. Defaults: dim to 60% at **10:00pm**,
+clear at **7:00am**. Runs entirely on the TV, no computer needed.
+
+### How it works
+The dim / warmth / sleep layer is one black-to-amber overlay the accessibility
+service lays over the screen, so it works even on TVs whose backlight can't be
+changed over adb. It never takes touch or focus. Requires the **TV Home**
+accessibility service to be switched on (the same one that makes TV Home your home
+screen).
+
+Code: `DimController.kt` (the layer, schedule and timer settings), `ControlServer.kt`
+(the phone page and its endpoints). No extra libraries.
 
 ## Add more website apps
 In `MainActivity.kt`, add a line to `webApps`:
