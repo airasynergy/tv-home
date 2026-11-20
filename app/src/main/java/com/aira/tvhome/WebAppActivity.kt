@@ -54,6 +54,15 @@ class WebAppActivity : Activity() {
         private val EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
         private const val LAYOUT_WIDTH = 1280
         private const val HOLD_FOR_SCROLL_MS = 550L
+
+        /** The web app on screen right now, so the phone remote can drive it. */
+        @Volatile var current: WebAppActivity? = null
+    }
+
+    /** Feed a remote key into this screen as if it came from the TV remote. Main thread only. */
+    fun remoteKey(code: Int) {
+        dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
     private lateinit var root: FrameLayout
@@ -466,9 +475,10 @@ class WebAppActivity : Activity() {
         }
     }
 
-    override fun onResume() { super.onResume(); web.onResume(); hideSystemBars() }
+    override fun onResume() { super.onResume(); current = this; web.onResume(); hideSystemBars() }
     override fun onPause() {
         dirX = 0; dirY = 0
+        if (current === this) current = null
         web.onPause()
         super.onPause()
     }

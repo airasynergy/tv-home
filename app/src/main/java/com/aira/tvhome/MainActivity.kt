@@ -25,6 +25,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -64,6 +65,9 @@ class MainActivity : Activity() {
 
         /** Apple's signature "ease out" curve. */
         private val EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+
+        /** A gentle spring for tiles lifting into focus. */
+        private val OVERSHOOT = OvershootInterpolator(2.2f)
 
         /** Popular TV apps placed in the Top Row the first time, if installed. */
         private val DEFAULT_TOP_ROW = listOf(
@@ -133,6 +137,7 @@ class MainActivity : Activity() {
     private var currentWallKey: String? = null
     private var loadGeneration = 0
     private var menuOverlay: View? = null
+    private var entranceDone = false
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     private val density by lazy { resources.displayMetrics.density }
@@ -396,10 +401,29 @@ class MainActivity : Activity() {
             grid.addView(rowView)
         }
 
+        playEntrance()
+
         val target = toFocus
             ?: dockRow.getChildAt(0)?.let { cardOf(it) }
             ?: (grid.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.let { cardOf(it) }
         target?.post { target.requestFocus() }
+    }
+
+    /** First paint: the header and Top Row rise in with a soft stagger. */
+    private fun playEntrance() {
+        if (entranceDone) return
+        entranceDone = true
+        val items = mutableListOf<View>(greeting, dateView, clock)
+        for (i in 0 until dockRow.childCount) items.add(dockRow.getChildAt(i))
+        items.forEachIndexed { i, v ->
+            v.alpha = 0f
+            v.translationY = dp(18f)
+            v.animate().alpha(1f).translationY(0f)
+                .setStartDelay(60L + i * 55L)
+                .setDuration(460)
+                .setInterpolator(EASE)
+                .start()
+        }
     }
 
     private fun gap() = dpi(36f)
@@ -513,8 +537,8 @@ class MainActivity : Activity() {
                 .scaleX(if (hasFocus) 1.12f else 1f)
                 .scaleY(if (hasFocus) 1.12f else 1f)
                 .translationZ(if (hasFocus) dp(26f) else 0f)
-                .setDuration(if (hasFocus) 280 else 220)
-                .setInterpolator(EASE)
+                .setDuration(if (hasFocus) 340 else 220)
+                .setInterpolator(if (hasFocus) OVERSHOOT else EASE)
                 .start()
             label.animate()
                 .alpha(if (hasFocus) 1f else 0f)

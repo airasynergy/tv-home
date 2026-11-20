@@ -22,19 +22,26 @@ A clean, Apple TV–style home screen for Google TV.
   - Pushing the pointer against an edge also scrolls; **Channel Up/Down** scroll too.
   - **Back** goes back, **Menu** reloads, **Play/Pause · Fast-forward · Rewind** control video.
 
-## Phone control panel — "Jaiden's TV"
-The app serves a control page over Wi-Fi. Open **`http://<TV-IP>:8099`** in any
-phone browser — no second app to install. It can:
+## Phone remote app — "Jaiden's TV"
+The app serves a full control app over Wi-Fi. Open **`http://<TV-IP>:8099`** in any
+phone browser — no second app to install. Three tabs:
 
-- **Dim the whole screen** (any app, video included), 0–80%, with Day / Dim / Night /
-  Dark presets and a live slider.
-- **Warm tint** — shift the picture warmer and cut blue light, separate from dimming.
-- **Sleep timers** — sleep in 15 / 30 / 60 min, or at a set time; a **Wake** button
-  brings it back. ("Sleep" is a software blackout — an app can't cut the TV's power —
-  so you wake it from the phone.)
-- **Auto-off every night** — a recurring blackout time you can enable and override for
-  the day with a one-off sleep timer.
-- **Remote** — Home, Back, and Open Nomorflix straight from your phone.
+**Remote**
+- **D-pad + OK** — drive the open web app (Nomorflix etc.), where the TV remote is
+  fiddly. (Arrows can't steer other apps — that needs system permission — but Back,
+  Home, volume and media work everywhere.)
+- **Back / Home**, **Volume** (−, mute, +, with a live bar) and **Media**
+  (rewind, play/pause, fast-forward).
+
+**Screen**
+- **Dim the whole screen** (any app, video included), 0–80%, Day / Dim / Night / Dark.
+- **Warm tint** — warmer picture, less blue light, separate from dimming.
+- **Sleep timers** — 15 / 30 / 60 min or a set time, with a **Wake** button. (Sleep is
+  a software blackout — an app can't cut TV power — woken from the phone.)
+- **Auto-off every night** + a one-off override, and the dim **schedule**.
+
+**Apps**
+- Launch any installed app, plus quick web tiles (Nomorflix, Twitch, Kick, YouTube).
 
 ### Night dimming schedule
 Dims at a set time and clears in the morning. Defaults: dim to 60% at **10:00pm**,

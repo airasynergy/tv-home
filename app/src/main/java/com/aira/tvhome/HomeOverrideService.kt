@@ -1,10 +1,13 @@
 package com.aira.tvhome
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import java.util.Calendar
 
@@ -74,17 +77,82 @@ class HomeOverrideService : AccessibilityService() {
     fun goHome() = performGlobalAction(GLOBAL_ACTION_HOME)
     fun goBack() = performGlobalAction(GLOBAL_ACTION_BACK)
 
-    fun openNomorflix() {
+    fun openNomorflix() = openWeb("https://nomorflix.cc", "Nomorflix", "nomorflix", 0xFFE50914.toInt(), 0xFF5A0308.toInt())
+
+    fun openWeb(url: String, name: String, wordmark: String = name.lowercase(),
+                top: Int = 0xFF1C1C1E.toInt(), bottom: Int = 0xFF000000.toInt()) {
         startActivity(
             Intent(this, WebAppActivity::class.java)
-                .putExtra(WebAppActivity.EXTRA_URL, "https://nomorflix.cc")
-                .putExtra(WebAppActivity.EXTRA_NAME, "Nomorflix")
-                .putExtra(WebAppActivity.EXTRA_WORDMARK, "nomorflix")
-                .putExtra(WebAppActivity.EXTRA_COLOR_TOP, 0xFFE50914.toInt())
-                .putExtra(WebAppActivity.EXTRA_COLOR_BOTTOM, 0xFF5A0308.toInt())
+                .putExtra(WebAppActivity.EXTRA_URL, url)
+                .putExtra(WebAppActivity.EXTRA_NAME, name)
+                .putExtra(WebAppActivity.EXTRA_WORDMARK, wordmark)
+                .putExtra(WebAppActivity.EXTRA_COLOR_TOP, top)
+                .putExtra(WebAppActivity.EXTRA_COLOR_BOTTOM, bottom)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
+
+    // ── Remote: D-pad routes into the open web app; the rest work system-wide ──
+    private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    /** Arrows / OK go to the on-screen web app (e.g. Nomorflix), where the remote struggles. */
+    fun navKey(code: Int) { WebAppActivity.current?.remoteKey(code) }
+
+    fun volUp() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+    fun volDown() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+    fun toggleMute() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
+
+    fun setVolumePct(pct: Int) {
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, (max * pct / 100).coerceIn(0, max), 0)
+    }
+
+    fun volumePct(): Int {
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max == 0) return 0
+        return audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max
+    }
+
+    fun isMuted(): Boolean = audio.isStreamMute(AudioManager.STREAM_MUSIC)
+
+    /** Play/pause, fast-forward, rewind — sent to whatever is playing, system-wide. */
+    fun mediaKey(code: Int) {
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    }
+
+    fun launchApp(pkg: String) {
+        val pm = packageManager
+        val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg) ?: return
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { startActivity(i) } catch (e: Exception) { }
+    }
+
+    /** Installed openable apps, as JSON, for the phone's Apps tab. */
+    fun appsJson(): String {
+        val pm = packageManager
+        val seen = HashSet<String>()
+        val items = ArrayList<Pair<String, String>>()  // label, package
+        for (cat in listOf(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER)) {
+            val query = Intent(Intent.ACTION_MAIN).addCategory(cat)
+            for (ri in pm.queryIntentActivities(query, 0)) {
+                val pkg = ri.activityInfo.packageName
+                if (pkg == packageName || !seen.add(pkg)) continue
+                val label = ri.loadLabel(pm).toString()
+                items.add(label to pkg)
+            }
+        }
+        items.sortBy { it.first.lowercase() }
+        val sb = StringBuilder("[")
+        items.take(40).forEachIndexed { i, (label, pkg) ->
+            if (i > 0) sb.append(",")
+            sb.append("{\"n\":\"").append(jsonEscape(label)).append("\",\"p\":\"").append(pkg).append("\"}")
+        }
+        return sb.append("]").toString()
+    }
+
+    private fun jsonEscape(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\t", " ")
 
     // ── Per-minute schedule + timers ──────────────────────────────────────────
     private fun applyScheduleIfPhaseChanged() {
