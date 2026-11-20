@@ -21,6 +21,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -58,6 +59,9 @@ class MainActivity : Activity() {
 
         /** True while this launcher is on screen, so the override service won't relaunch it in a loop. */
         @Volatile var active = false
+
+        /** This launcher while it's on screen, so the phone remote's D-pad can drive it. */
+        @Volatile var current: MainActivity? = null
 
         private const val COLUMNS = 5
         private const val SIDE_PADDING_DP = 72f
@@ -208,6 +212,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         active = true
+        current = this
         handler.post(clockTick)
         loadTiles()
     }
@@ -215,7 +220,14 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         active = false
+        if (current === this) current = null
         handler.removeCallbacks(clockTick)
+    }
+
+    /** Feed a remote key into the launcher so the phone's D-pad can move focus here. Main thread only. */
+    fun remoteKey(code: Int) {
+        dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
     @Deprecated("Home screen: Back returns to the top instead of closing")

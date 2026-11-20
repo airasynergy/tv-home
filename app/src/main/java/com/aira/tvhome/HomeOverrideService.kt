@@ -102,8 +102,11 @@ class HomeOverrideService : AccessibilityService() {
     // ── Remote: D-pad routes into the open web app; the rest work system-wide ──
     private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    /** Arrows / OK go to the on-screen web app (e.g. Nomorflix), where the remote struggles. */
-    fun navKey(code: Int) { WebAppActivity.current?.remoteKey(code) }
+    /** Arrows / OK go to whatever of ours is on screen — the web app (Nomorflix) or the launcher. */
+    fun navKey(code: Int) {
+        val web = WebAppActivity.current
+        if (web != null) web.remoteKey(code) else MainActivity.current?.remoteKey(code)
+    }
 
     fun volUp() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
     fun volDown() = audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)

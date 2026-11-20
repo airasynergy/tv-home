@@ -15,11 +15,10 @@ import java.util.Calendar
 /**
  * A small web server that turns any phone on the same Wi-Fi into a full TV remote.
  *
- * Open http://TV-IP:8099 for a tabbed app — Remote (D-pad, volume, media), Screen
+ * Open http://TV-IP:8099 for a tabbed app — Remote (volume, D-pad, media), Screen
  * (dimming, warm tint, sleep, schedule) and Apps (launch what's installed). No second
- * app to install, plain Java sockets, no libraries. Traffic is light, so one
- * background thread handles requests one at a time; anything that touches the screen
- * layer or the TV runs on the main thread.
+ * app to install, plain Java sockets, no libraries. One background thread handles
+ * requests one at a time; anything touching the screen layer or the TV runs on main.
  */
 class ControlServer(private val svc: HomeOverrideService) {
 
@@ -75,11 +74,9 @@ class ControlServer(private val svc: HomeOverrideService) {
             "/state" -> send(out, "200 OK", "application/json", state())
             "/apps" -> send(out, "200 OK", "application/json", svc.appsJson())
 
-            // ── Screen: dim / warmth ───────────────────────────────────────────
             "/set" -> { q["level"]?.toFloatOrNull()?.let { l -> main.post { DimController.setLevel(svc, l) } }; send(out, "200 OK", "application/json", state()) }
             "/warm" -> { q["level"]?.toFloatOrNull()?.let { w -> main.post { DimController.setWarmth(svc, w) } }; send(out, "200 OK", "application/json", state()) }
 
-            // ── Sleep ──────────────────────────────────────────────────────────
             "/sleepnow" -> { main.post { svc.sleepTv() }; send(out, "200 OK", "application/json", state()) }
             "/wake" -> { main.post { svc.wakeTv() }; send(out, "200 OK", "application/json", state()) }
             "/sleep" -> { q["mins"]?.toIntOrNull()?.let { m -> DimController.setOneshot(svc, System.currentTimeMillis() + m * 60_000L) }; send(out, "200 OK", "application/json", state()) }
@@ -101,7 +98,6 @@ class ControlServer(private val svc: HomeOverrideService) {
                 send(out, "200 OK", "application/json", state())
             }
 
-            // ── Remote: navigation ─────────────────────────────────────────────
             "/nav" -> {
                 val code = when (q["k"]) {
                     "up" -> KeyEvent.KEYCODE_DPAD_UP
@@ -117,7 +113,6 @@ class ControlServer(private val svc: HomeOverrideService) {
             "/home" -> { main.post { svc.goHome() }; send(out, "200 OK", "application/json", "{}") }
             "/back" -> { main.post { svc.goBack() }; send(out, "200 OK", "application/json", "{}") }
 
-            // ── Remote: volume + media ─────────────────────────────────────────
             "/volup" -> { main.post { svc.volUp() }; send(out, "200 OK", "application/json", state()) }
             "/voldown" -> { main.post { svc.volDown() }; send(out, "200 OK", "application/json", state()) }
             "/mute" -> { main.post { svc.toggleMute() }; send(out, "200 OK", "application/json", state()) }
@@ -133,7 +128,6 @@ class ControlServer(private val svc: HomeOverrideService) {
                 send(out, "200 OK", "application/json", "{}")
             }
 
-            // ── Apps ───────────────────────────────────────────────────────────
             "/launch" -> { q["pkg"]?.let { p -> main.post { svc.launchApp(p) } }; send(out, "200 OK", "application/json", "{}") }
             "/web" -> {
                 val url = q["url"]; val name = q["name"] ?: "Web"
@@ -195,6 +189,7 @@ class ControlServer(private val svc: HomeOverrideService) {
             "Content-Type: $type\r\n" +
             "Content-Length: ${bytes.size}\r\n" +
             "Access-Control-Allow-Origin: *\r\n" +
+            "Cache-Control: no-store\r\n" +
             "Connection: close\r\n\r\n"
         out.write(header.toByteArray(Charsets.UTF_8))
         out.write(bytes)
@@ -213,21 +208,23 @@ class ControlServer(private val svc: HomeOverrideService) {
   :root{
     color-scheme:dark;
     --bg:#070708; --panel:#141418; --panel2:#1c1c22; --line:#2a2a31;
-    --ink:#f4f4f6; --dim:#8a8a93; --accent:#5e9dff; --accentgrad:linear-gradient(135deg,#6aa2ff,#9b6bff);
+    --ink:#f4f4f6; --dim:#9a9aa4; --accent:#5e9dff; --accentgrad:linear-gradient(135deg,#6aa2ff,#9b6bff);
     --warm:linear-gradient(90deg,#ffe6b0,#ff9329); --red:#ff4d4a; --green:#30d667;
     --r:20px; --ease:cubic-bezier(.22,.61,.36,1);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;}
-  html,body{height:100%;}
-  body{margin:0;background:
-      radial-gradient(1200px 600px at 50% -10%, #17171f 0%, var(--bg) 55%);
+  html,body{height:100%;touch-action:manipulation;-webkit-text-size-adjust:100%;}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%, #17171f 0%, var(--bg) 55%);
       color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
       display:flex;flex-direction:column;overflow:hidden;}
+  svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;}
+  svg.f{fill:currentColor;stroke:none;}
+
   .top{padding:20px 20px 6px;display:flex;align-items:center;justify-content:space-between;}
   .top h1{font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0;}
   .pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);}
-  main{flex:1;overflow-y:auto;padding:8px 18px 110px;-webkit-overflow-scrolling:touch;}
+  main{flex:1;overflow-y:auto;padding:8px 18px 112px;-webkit-overflow-scrolling:touch;}
   .tab{display:none;animation:rise .34s var(--ease);}
   .tab.on{display:block;}
   @keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
@@ -239,61 +236,66 @@ class ControlServer(private val svc: HomeOverrideService) {
   .val{font-size:34px;font-weight:700;letter-spacing:-.03em;}
   .val span{font-size:17px;color:var(--dim);font-weight:500;}
 
-  button{font:inherit;border:none;color:var(--ink);background:#26262d;border-radius:14px;
-      font-weight:600;font-size:15px;cursor:pointer;transition:transform .12s var(--ease),background .2s;}
-  button:active{transform:scale(.93);background:#30303a;}
-  .b-accent{background:var(--accentgrad);} .b-red{background:var(--red);} .b-ghost{background:#20202733;border:1px solid var(--line);}
+  button{font:inherit;border:none;color:var(--ink);background:#26262d;border-radius:14px;font-weight:600;font-size:15px;
+      cursor:pointer;transition:transform .11s var(--ease),background .2s;touch-action:manipulation;}
+  button:active{transform:scale(.92);background:#30303a;}
+  .b-accent{background:var(--accentgrad);color:#fff;} .b-red{background:var(--red);color:#fff;}
+  .b-ghost{background:#20202733;border:1px solid var(--line);}
 
-  input[type=range]{-webkit-appearance:none;width:100%;height:30px;background:transparent;margin-top:6px;}
+  input[type=range]{-webkit-appearance:none;width:100%;height:30px;background:transparent;margin-top:6px;touch-action:manipulation;}
   input[type=range]::-webkit-slider-runnable-track{height:12px;border-radius:7px;background:#2a2a31;}
   #slider::-webkit-slider-runnable-track{background:linear-gradient(90deg,#3a3a42,#0b0b0f);}
   #warm::-webkit-slider-runnable-track{background:var(--warm);}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-8px;
-      border-radius:50%;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.6);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-8px;border-radius:50%;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.6);}
 
   .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px;}
   .presets button,.g3 button{padding:13px 0;}
   .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;}
-  input[type=time],input[type=number]{font:inherit;background:#26262d;border:1px solid var(--line);color:var(--ink);
-      border-radius:11px;padding:10px 12px;width:120px;text-align:center;}
+  input[type=time],input[type=number]{font:inherit;background:#26262d;border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:10px 12px;width:120px;text-align:center;}
   .wide{width:100%;padding:14px 0;margin-top:8px;}
   .note{color:var(--dim);font-size:12px;margin-top:8px;text-align:center;min-height:16px;}
 
-  /* D-pad */
-  .pad{position:relative;width:230px;height:230px;margin:6px auto 4px;}
-  .pad button{position:absolute;background:#22222a;border:1px solid var(--line);}
-  .pad .up{top:0;left:65px;width:100px;height:72px;border-radius:30px 30px 10px 10px;}
-  .pad .dn{bottom:0;left:65px;width:100px;height:72px;border-radius:10px 10px 30px 30px;}
-  .pad .lf{left:0;top:65px;width:72px;height:100px;border-radius:30px 10px 10px 30px;}
-  .pad .rt{right:0;top:65px;width:72px;height:100px;border-radius:10px 30px 30px 10px;}
-  .pad .ok{left:65px;top:65px;width:100px;height:100px;border-radius:50%;background:var(--accentgrad);
-      border:none;font-weight:700;box-shadow:0 6px 20px rgba(94,157,255,.35);}
-  .pad .arrow{position:absolute;color:var(--dim);font-size:19px;pointer-events:none;}
-  .ctl2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;}
-  .vol{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:10px;align-items:center;margin-top:6px;}
-  .vol button{padding:18px 0;font-size:20px;}
+  /* Volume */
+  .vol{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:10px;}
+  .vol button{display:flex;align-items:center;justify-content:center;padding:18px 0;}
+  .vol button svg{width:26px;height:26px;}
   .volbar{height:8px;border-radius:5px;background:#2a2a31;overflow:hidden;margin-top:14px;}
   .volfill{height:100%;background:var(--accentgrad);width:0%;transition:width .2s var(--ease);}
-  .media{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;}
-  .media button{padding:16px 0;font-size:18px;}
+
+  /* D-pad */
+  .pad{position:relative;width:236px;height:236px;margin:6px auto 2px;}
+  .pad button{position:absolute;background:#22222a;border:1px solid var(--line);color:var(--dim);
+      display:flex;align-items:center;justify-content:center;}
+  .pad button svg{width:27px;height:27px;stroke-width:2.4;}
+  .pad .up{top:0;left:68px;width:100px;height:74px;border-radius:30px 30px 10px 10px;}
+  .pad .dn{bottom:0;left:68px;width:100px;height:74px;border-radius:10px 10px 30px 30px;}
+  .pad .lf{left:0;top:68px;width:74px;height:100px;border-radius:30px 10px 10px 30px;}
+  .pad .rt{right:0;top:68px;width:74px;height:100px;border-radius:10px 30px 30px 10px;}
+  .pad .ok{left:68px;top:68px;width:100px;height:100px;border-radius:50%;background:var(--accentgrad);
+      border:none;color:#fff;font-weight:700;font-size:17px;box-shadow:0 6px 20px rgba(94,157,255,.35);}
+  .ctl2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
+  .ctl2 button{display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 0;}
+  .ctl2 button svg{width:20px;height:20px;}
+
+  /* Media */
+  .media{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .media button{display:flex;align-items:center;justify-content:center;padding:16px 0;}
+  .media button svg{width:24px;height:24px;}
 
   /* Apps */
   .appgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
   .appgrid button{padding:16px 14px;text-align:left;background:linear-gradient(180deg,#24242b,#1a1a20);
-      border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      animation:pop .3s var(--ease) both;}
+      border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:pop .3s var(--ease) both;}
 
   /* Tab bar */
   nav{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;
       padding:10px 14px calc(14px + env(safe-area-inset-bottom));
-      background:rgba(12,12,14,.72);backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);
-      border-top:1px solid var(--line);}
-  nav button{flex:1;max-width:150px;background:transparent;color:var(--dim);padding:10px 0;font-size:13px;font-weight:600;
+      background:rgba(12,12,14,.72);backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);border-top:1px solid var(--line);}
+  nav button{flex:1;max-width:150px;background:transparent;color:var(--dim);padding:9px 0;font-size:12px;font-weight:600;
       display:flex;flex-direction:column;align-items:center;gap:4px;border-radius:14px;}
-  nav button .ic{font-size:19px;line-height:1;}
   nav button.on{color:var(--ink);background:#23232b;}
-  .ok{color:var(--green);font-size:13px;height:16px;margin-top:8px;text-align:center;}
+  .ok-msg{color:var(--green);font-size:13px;height:16px;margin-top:8px;text-align:center;}
 </style>
 </head>
 <body>
@@ -303,41 +305,37 @@ class ControlServer(private val svc: HomeOverrideService) {
     <!-- REMOTE -->
     <section id="t-remote" class="tab on">
       <div class="card">
-        <div class="label">Navigation</div>
-        <div class="pad">
-          <button class="up" data-nav="up"></button>
-          <button class="dn" data-nav="down"></button>
-          <button class="lf" data-nav="left"></button>
-          <button class="rt" data-nav="right"></button>
-          <button class="ok" data-nav="ok">OK</button>
-          <span class="arrow" style="top:22px;left:108px">&#9650;</span>
-          <span class="arrow" style="bottom:22px;left:108px">&#9660;</span>
-          <span class="arrow" style="left:24px;top:103px">&#9664;</span>
-          <span class="arrow" style="right:24px;top:103px">&#9654;</span>
-        </div>
-        <div class="ctl2">
-          <button class="b-ghost" data-act="back">Back</button>
-          <button class="b-ghost" data-act="home">Home</button>
-        </div>
-        <div class="note">Arrows &amp; OK drive the open app (Nomorflix etc.). Back / Home work anywhere.</div>
-      </div>
-
-      <div class="card">
         <div class="label">Volume</div>
         <div class="vol">
-          <button id="vdn">&#8722;</button>
-          <button id="vmute" class="b-ghost">Mute</button>
-          <button id="vup">+</button>
+          <button id="vdn"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <button id="vmute" class="b-ghost"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 3 9 3 15 6 15 11 19" fill="currentColor" stroke="none"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></button>
+          <button id="vup"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
         </div>
         <div class="volbar"><div class="volfill" id="vfill"></div></div>
       </div>
 
       <div class="card">
+        <div class="label">Navigation</div>
+        <div class="pad">
+          <button class="up" data-nav="up"><svg viewBox="0 0 24 24"><polyline points="6 15 12 9 18 15"/></svg></button>
+          <button class="dn" data-nav="down"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button class="lf" data-nav="left"><svg viewBox="0 0 24 24"><polyline points="15 6 9 12 15 18"/></svg></button>
+          <button class="rt" data-nav="right"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <button class="ok" data-nav="ok">OK</button>
+        </div>
+        <div class="ctl2">
+          <button class="b-ghost" data-act="back"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back</button>
+          <button class="b-ghost" data-act="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</button>
+        </div>
+        <div class="note">Arrows &amp; OK drive your home screen and open web apps (Nomorflix). Back / Home work everywhere.</div>
+      </div>
+
+      <div class="card">
         <div class="label">Media</div>
         <div class="media">
-          <button data-m="rew">&#9194;</button>
-          <button class="b-accent" data-m="playpause">&#9199;</button>
-          <button data-m="ff">&#9193;</button>
+          <button data-m="rew"><svg class="f" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+          <button class="b-accent" data-m="playpause"><svg class="f" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg></button>
+          <button data-m="ff"><svg class="f" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
         </div>
       </div>
     </section>
@@ -376,7 +374,7 @@ class ControlServer(private val svc: HomeOverrideService) {
         <div class="row"><label>Off at</label><input type="time" id="aot"></div>
         <div class="row"><label>Enabled</label><input type="checkbox" id="aoe" style="width:48px;height:28px"></div>
         <button class="wide" id="saveoff">Save auto-off</button>
-        <div class="ok" id="ok2"></div>
+        <div class="ok-msg" id="ok2"></div>
       </div>
       <div class="card">
         <div class="label">Dim schedule</div>
@@ -384,7 +382,7 @@ class ControlServer(private val svc: HomeOverrideService) {
         <div class="row"><label>Clears at</label><input type="time" id="ne"></div>
         <div class="row"><label>Night level</label><input type="number" id="nl" min="0" max="80" step="5"></div>
         <button class="wide b-accent" id="save">Save schedule</button>
-        <div class="ok" id="ok"></div>
+        <div class="ok-msg" id="ok"></div>
       </div>
     </section>
 
@@ -407,16 +405,15 @@ class ControlServer(private val svc: HomeOverrideService) {
   </main>
 
   <nav>
-    <button class="on" data-tab="remote"><span class="ic">&#9673;</span>Remote</button>
-    <button data-tab="screen"><span class="ic">&#9681;</span>Screen</button>
-    <button data-tab="apps"><span class="ic">&#9638;</span>Apps</button>
+    <button class="on" data-tab="remote"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg><span>Remote</span></button>
+    <button data-tab="screen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="7" y2="7"/><line x1="17" y1="17" x2="19" y2="19"/><line x1="5" y1="19" x2="7" y2="17"/><line x1="17" y1="7" x2="19" y2="5"/></svg><span>Screen</span></button>
+    <button data-tab="apps"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg><span>Apps</span></button>
   </nav>
 
 <script>
   function g(id){return document.getElementById(id);}
   function tap(url){ fetch(url).catch(function(){}); }
 
-  // Tabs
   var tabBtns=document.querySelectorAll('nav button');
   for(var i=0;i<tabBtns.length;i++){ tabBtns[i].addEventListener('click', function(){
     var name=this.getAttribute('data-tab');
@@ -424,23 +421,21 @@ class ControlServer(private val svc: HomeOverrideService) {
     this.classList.add('on');
     var secs=document.querySelectorAll('.tab');
     for(var s=0;s<secs.length;s++) secs[s].classList.remove('on');
-    var el=g('t-'+name); el.classList.add('on');
+    g('t-'+name).classList.add('on');
     if(name==='apps') loadApps();
   }); }
 
-  // Remote
   var nav=document.querySelectorAll('[data-nav]');
   for(var n=0;n<nav.length;n++){ nav[n].addEventListener('click', function(){ tap('/nav?k='+this.getAttribute('data-nav')); }); }
   var acts=document.querySelectorAll('[data-act]');
   for(var a=0;a<acts.length;a++){ acts[a].addEventListener('click', function(){ tap('/'+this.getAttribute('data-act')); }); }
   var meds=document.querySelectorAll('[data-m]');
   for(var m=0;m<meds.length;m++){ meds[m].addEventListener('click', function(){ tap('/media?k='+this.getAttribute('data-m')); }); }
-  g('vup').addEventListener('click', function(){ fetch('/volup').then(r=>r.json()).then(vol); });
-  g('vdn').addEventListener('click', function(){ fetch('/voldown').then(r=>r.json()).then(vol); });
-  g('vmute').addEventListener('click', function(){ fetch('/mute').then(r=>r.json()).then(vol); });
+  g('vup').addEventListener('click', function(){ fetch('/volup').then(function(r){return r.json();}).then(vol); });
+  g('vdn').addEventListener('click', function(){ fetch('/voldown').then(function(r){return r.json();}).then(vol); });
+  g('vmute').addEventListener('click', function(){ fetch('/mute').then(function(r){return r.json();}).then(vol); });
   function vol(s){ if(s&&typeof s.volume!=='undefined'){ g('vfill').style.width=(s.muted?0:s.volume)+'%'; } }
 
-  // Screen
   var slider=g('slider'), lvl=g('lvl'), warm=g('warm'), warmv=g('warmv'), t1=null, t2=null;
   function pct(el,v){ el.innerHTML=v+'<span>%</span>'; }
   function hhmm(ms){ var d=new Date(ms); return (d.getHours()<10?'0':'')+d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes(); }
@@ -458,7 +453,6 @@ class ControlServer(private val svc: HomeOverrideService) {
   g('save').addEventListener('click', function(){ fetch('/schedule?nightStart='+encodeURIComponent(g('ns').value)+'&nightEnd='+encodeURIComponent(g('ne').value)+'&nightLevel='+(parseInt(g('nl').value,10)/100)+'&dayLevel=0').then(function(){ flash('ok'); }); });
   function flash(id){ g(id).textContent='Saved'; setTimeout(function(){ g(id).textContent=''; },1400); }
 
-  // Apps
   function web(u,n){ tap('/web?url='+encodeURIComponent(u)+'&name='+encodeURIComponent(n)); }
   var appsLoaded=false;
   function loadApps(){ if(appsLoaded) return; appsLoaded=true;
@@ -479,8 +473,8 @@ class ControlServer(private val svc: HomeOverrideService) {
     g('ns').value=s.nightStart; g('ne').value=s.nightEnd; g('nl').value=s.nightLevel; g('nl').max=s.max;
     g('aot').value=s.autoOffTime; g('aoe').checked=s.autoOffEnabled;
     vol(s);
-    var note=g('timernote');
-    note.textContent = s.asleep ? 'Asleep — tap Wake' : (s.oneshotAt>0 ? 'Sleeping at '+hhmm(s.oneshotAt) : '');
+    g('timernote').textContent = s.asleep ? 'Asleep — tap Wake' : (s.oneshotAt>0 ? 'Sleeping at '+hhmm(s.oneshotAt) : '');
+    g('status').textContent='Connected';
   }).catch(function(){ g('status').textContent='Reconnecting…'; }); }
 
   load();
