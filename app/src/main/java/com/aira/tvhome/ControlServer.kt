@@ -10,6 +10,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.util.Base64
 import java.util.Calendar
 
 /**
@@ -73,6 +74,8 @@ class ControlServer(private val svc: HomeOverrideService) {
             "/" -> send(out, "200 OK", "text/html; charset=utf-8", page())
             "/state" -> send(out, "200 OK", "application/json", state())
             "/apps" -> send(out, "200 OK", "application/json", svc.appsJson())
+            "/icon.png" -> sendBytes(out, "image/png", Base64.getDecoder().decode(ICON_B64))
+            "/manifest.webmanifest" -> send(out, "200 OK", "application/manifest+json", MANIFEST)
 
             "/set" -> { q["level"]?.toFloatOrNull()?.let { l -> main.post { DimController.setLevel(svc, l) } }; send(out, "200 OK", "application/json", state()) }
             "/warm" -> { q["level"]?.toFloatOrNull()?.let { w -> main.post { DimController.setWarmth(svc, w) } }; send(out, "200 OK", "application/json", state()) }
@@ -198,6 +201,17 @@ class ControlServer(private val svc: HomeOverrideService) {
         out.flush()
     }
 
+    private fun sendBytes(out: OutputStream, type: String, bytes: ByteArray) {
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: $type\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Cache-Control: max-age=86400\r\n" +
+            "Connection: close\r\n\r\n"
+        out.write(header.toByteArray(Charsets.UTF_8))
+        out.write(bytes)
+        out.flush()
+    }
+
     // The control app. No '$' anywhere, so it survives Kotlin's string rules.
     private fun page(): String = """
 <!doctype html>
@@ -206,6 +220,14 @@ class ControlServer(private val svc: HomeOverrideService) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Jaiden's TV</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="icon" href="/icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jaiden's TV">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0a0c">
 <style>
   :root{
     color-scheme:dark;
@@ -505,4 +527,16 @@ class ControlServer(private val svc: HomeOverrideService) {
 </body>
 </html>
 """.trimIndent()
+
+    companion object {
+        private const val MANIFEST = "{" +
+            "\"name\":\"Jaiden's TV\",\"short_name\":\"Jaiden's TV\"," +
+            "\"start_url\":\"/\",\"display\":\"standalone\"," +
+            "\"background_color\":\"#0a0a0c\",\"theme_color\":\"#0a0a0c\"," +
+            "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"180x180\",\"type\":\"image/png\",\"purpose\":\"any\"}]" +
+            "}"
+
+        private const val ICON_B64 =
+            "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"
+    }
 }
